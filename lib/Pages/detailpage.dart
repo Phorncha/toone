@@ -257,7 +257,7 @@ class _DetailPageState extends State<DetailPage> {
       await userRef.update({
         'purchasedEpisodes': FieldValue.arrayUnion([
           {
-            'toonId': toonId,
+            'id': toonId,
             'title': title,
             'episodeId': episodeId,
           }

@@ -1,21 +1,41 @@
-
 import 'package:flutter/material.dart';
 
-class AddFriendPage extends StatefulWidget {
-  const AddFriendPage({Key? key}) : super(key: key);
+class MyCartoonsPage extends StatefulWidget {
+  const MyCartoonsPage({Key? key}) : super(key: key);
 
   @override
-  State<AddFriendPage> createState() => _AddFriendPageState();
+  State<MyCartoonsPage> createState() => _MyCartoonsPageState();
 }
 
-class _AddFriendPageState extends State<AddFriendPage> {
+class _MyCartoonsPageState extends State<MyCartoonsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       
-      body: Center(
-        child:
-            Text('หนังสือ'), // สามารถแทนด้วยเนื้อหาที่คุณต้องการแสดง
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Card(
+          child: Column(
+            children: [
+              ListTile(
+                title: Text('Cartoon Title'),
+                subtitle: Text('Cartoon Subtitle'),
+              ),
+              Card(
+                child: ListTile(
+                  title: Text('Nested Cartoon 1'),
+                  subtitle: Text('Subtitle 1'),
+                ),
+              ),
+              Card(
+                child: ListTile(
+                  title: Text('Nested Cartoon 2'),
+                  subtitle: Text('Subtitle 2'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

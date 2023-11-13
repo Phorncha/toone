@@ -257,7 +257,7 @@ class _DetailPageState extends State<DetailPage> {
       await userRef.update({
         'purchasedEpisodes': FieldValue.arrayUnion([
           {
-            'toonId': toonId,
+            'id': toonId,
             'title': title,
             'episodeId': episodeId,
           }
@@ -422,8 +422,6 @@ class _DetailPageState extends State<DetailPage> {
                     int episodeNumber =
                         int.tryParse(episodes[entry.key].split(' ')[1]) ?? 0;
 
-               
-
                     // เช็คว่า EP มีการติด Icon Lock หรือไม่
                     bool isLocked = episodeNumber >= 4;
 
@@ -450,14 +448,15 @@ class _DetailPageState extends State<DetailPage> {
                                 builder: (context) => MyProfile(),
                               ),
                             );
-                          } 
-                          
-                          else {
+                          } else {
                             // ถ้าผู้ใช้เข้าสู่ระบบ
                             String episode_id = episodeIds[entry.key];
                             setState(() {
                               selectedEpisodeId = episode_id;
                             });
+
+                            // สร้าง bool check data coiiection users ที่ doc == uid ให้ค้นหา field purchasedEpisodes ซึ่งเก็บ เป็น array โดยใน array เก็บเป็น map ใน เก็บ 3 field
+                            if (true) {}
 
                             if (isLocked) {
                               // ดึงข้อมูล coin จาก Firestore
@@ -535,9 +534,7 @@ class _DetailPageState extends State<DetailPage> {
                                   },
                                 );
                               }
-                             } 
-                            
-                            else {
+                            } else {
                               // EP ไม่ติด Icon Lock ให้ไปยังหน้า EpisodePage โดยตรง
                               goToEpisodePage(episode_id);
                             }
