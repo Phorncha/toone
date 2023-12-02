@@ -11,6 +11,8 @@ class EpisodePage extends StatefulWidget {
   final String episodeId;
   final List<String> episodes;
 
+  
+
   EpisodePage(
       {required this.toonId, required this.episodeId, required this.episodes});
 
@@ -21,7 +23,7 @@ class EpisodePage extends StatefulWidget {
 void main() {
   runApp(MaterialApp(
     home: EpisodePage(
-      toonId: 'yourToonId',
+      toonId: "",
       episodeId: 'yourEpisodeId',
       episodes: [],
     ),
@@ -575,30 +577,6 @@ class _EpisodePageState extends State<EpisodePage> {
                               '${snapshot.data ?? 0}',
                               style: TextStyle(fontSize: 16),
                             );
-                          },
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: Icon(
-                            Icons.arrow_back_ios,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                          onPressed: () {
-                            epsisodeID_FilterBack();
-                          },
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.arrow_forward_ios,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                          onPressed: () {
-                            epsisodeID_FilterNext();
                           },
                         ),
                       ],

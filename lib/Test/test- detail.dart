@@ -1,5 +1,7 @@
 // import 'dart:ui';
 
+import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:apptoon/Pages/episode.dart';
@@ -142,6 +144,28 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
+  Stream<int> fetchRatingEP(String episodeId) {
+    final episodeRef =
+        FirebaseFirestore.instance.collection(widget.id).doc(episodeId);
+
+    return episodeRef.snapshots().map((document) {
+      if (document.exists) {
+        final rating = document.data()?['rating'];
+        if (rating != null && rating is int) {
+          return rating;
+        } else {
+          return 0; // กำหนดค่าเริ่มต้นหากคะแนนไม่ใช่ int หรือเป็น null
+        }
+      } else {
+        return 0; // กำหนดค่าเริ่มต้นหากไม่มีเอกสาร
+      }
+    }).handleError((error) {
+      print('ข้อผิดพลาดในการดึงคะแนนจาก Firestore: $error');
+      return 0; // กำหนดค่าเริ่มต้นในกรณีของข้อผิดพลาด
+    });
+  }
+
+// ตรวจสอบค่า null ก่อนที่จะทำการแปลง
   Future<int> getRatingStory() async {
     try {
       final storyRef =
@@ -150,34 +174,18 @@ class _DetailPageState extends State<DetailPage> {
       final document = await storyRef.get();
       if (document.exists) {
         final rating = document.data()?['rating'] as int;
-        return rating ?? 0;
+        if (rating != null && rating is int) {
+          return rating;
+        } else {
+          return 0; // ถ้าคะแนนไม่ใช่ int หรือเป็น null
+        }
+        // return rating ?? 0;
       }
       return 0; // ถ้าไม่มีเอกสารหรือไม่มีฟิล "rating"
     } catch (e) {
       print('Error fetching rating from Firestore: $e');
       return 0; // ในกรณีที่เกิดข้อผิดพลาด
     }
-  }
-
-  Stream<int> fetchRatingEP(String episodeId) {
-    final episodeRef =
-        FirebaseFirestore.instance.collection(widget.id).doc(episodeId);
-
-    return episodeRef.snapshots().map((document) {
-      if (document.exists) {
-        final rating = document.data()?['rating'];
-        if (rating is int) {
-          return rating;
-        } else {
-          return 0; // ถ้า rating ไม่ใช่ int ให้คืนค่าเริ่มต้น 0
-        }
-      } else {
-        return 0; // ค่าคะแนนเริ่มต้นถ้าไม่พบข้อมูล
-      }
-    }).handleError((error) {
-      print('เกิดข้อผิดพลาดในการดึงคะแนนจาก Firestore: $error');
-      return 0; // จัดการข้อผิดพลาดโดยการให้ค่าเริ่มต้น 0
-    });
   }
 
   Future<void> checkUserLoginStatus(bool isLocked, String episodeId) async {
@@ -248,20 +256,46 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
-  Future<void> updatePurchasedEpisodes(
-      String uid, String toonId, String title, String episodeId) async {
+  Future<void> updatePurchasedEpisodes(String userId, String storyId,
+      String storyTitle, String episodeId) async {
     try {
-      final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
+      // อ้างอิงไปยังเอกสารผู้ใช้ในคอลเล็กชัน "users"
+      final userRef =
+          FirebaseFirestore.instance.collection('users').doc(userId);
 
-      await userRef.update({
-        'purchasedEpisodes': FieldValue.arrayUnion([
-          {
-            'toonId': toonId,
-            'title': title,
-            'episodeId': episodeId,
+      // ดึงข้อมูลเอกสารผู้ใช้
+      final userDoc = await userRef.get();
+
+      // ตรวจสอบว่ามีเอกสารผู้ใช้หรือไม่
+      if (userDoc.exists) {
+        // ดึงข้อมูลตอนที่ซื้อมาจากเอกสารผู้ใช้
+        final purchasedEpisodes =
+            userDoc.data()?['purchasedEpisodes'] ?? <String, dynamic>{};
+
+        // ตรวจสอบว่า storyId มีอยู่ใน purchasedEpisodes หรือไม่
+        if (purchasedEpisodes.containsKey(storyId)) {
+          // ดึงตอนที่ซื้อมาสำหรับเรื่องที่ระบุ
+          final storyPurchases =
+              purchasedEpisodes[storyId]['episodes'] ?? <String, dynamic>{};
+
+          // ตรวจสอบว่า episodeId มีอยู่ในเรื่องหรือไม่
+          if (storyPurchases.containsKey(episodeId)) {
+            // ตอนถูกซื้อแล้ว, ไม่ต้องทำอะไร
+          } else {
+            // ตอนยังไม่ได้ซื้อ, เพิ่ม episodeId เข้าไปใน storyPurchases
+            storyPurchases[episodeId] = DateTime.now().toUtc().toString();
           }
-        ])
-      });
+        } else {
+          // เรื่องยังไม่ได้ซื้อ, เพิ่มเรื่องใน purchasedEpisodes
+          purchasedEpisodes[storyId] = {
+            'title': storyTitle,
+            'episodes': {episodeId: DateTime.now().toUtc().toString()}
+          };
+        }
+
+        // อัปเดตเอกสารผู้ใช้ด้วยข้อมูล purchasedEpisodes ใหม่
+        await userRef.update({'purchasedEpisodes': purchasedEpisodes});
+      }
     } catch (e) {
       print('Error updating purchased episodes: $e');
     }
@@ -277,6 +311,135 @@ class _DetailPageState extends State<DetailPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
+            Padding(
+              padding: EdgeInsets.all(5),
+              child: Card(
+                clipBehavior: Clip.antiAliasWithSaveLayer,
+                color: Color.fromARGB(255, 235, 177, 196),
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.all(2),
+                      child: Column(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              widget.imageUrl,
+                              width: 100,
+                              height: 150,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(10.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(''),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Title: ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    widget.title,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Text(''),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Author: ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    widget.author,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: StreamBuilder<bool>(
+                                    stream:
+                                        checkFavoriteStory(), // สร้างฟังก์ชันนี้เพื่อรับ Stream ในการติดตามการกด Favorite
+                                    builder: (context, snapshot) {
+                                      if (snapshot.connectionState ==
+                                          ConnectionState.waiting) {
+                                        return CircularProgressIndicator();
+                                      } else if (snapshot.hasError) {
+                                        return Icon(
+                                          Icons.favorite_border,
+                                          color: Colors.white,
+                                          size: 24,
+                                        );
+                                      } else {
+                                        final isUserFavorite =
+                                            snapshot.data ?? false;
+                                        return Icon(
+                                          isUserFavorite
+                                              ? Icons.favorite
+                                              : Icons.favorite_border,
+                                          color: Colors.white,
+                                          size: 24,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      isFavorite = !isFavorite;
+                                    });
+
+                                    updateRatingStoryAndUser(isFavorite);
+                                  },
+                                ),
+                                FutureBuilder<int>(
+                                  future: getRatingStory(),
+                                  builder: (context, snapshot) {
+                                    return Text(
+                                      '${snapshot.data ?? 0}',
+                                      style: TextStyle(fontSize: 16),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             Padding(
               padding: EdgeInsets.all(5),
               child: Card(
@@ -303,241 +466,245 @@ class _DetailPageState extends State<DetailPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: InkWell(
-                          onTap: () async {
-                            if (_user == null && !isLocked) {
-                              // ถ้าผู้ใช้ไม่ได้เข้าสู่ระบบ และตอนไม่ได้ lock ให้ไปยังหน้า
-                              String episode_id = episodeIds[entry.key];
-                              setState(() {
-                                selectedEpisodeId = episode_id;
-                              });
-                              goToEpisodePage(episode_id);
-                            } else if (_user == null) {
-                              // ถ้าผู้ใช้ไม่ได้เข้าสู่ระบบ ให้ไปยังหน้า MyProfile
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => MyProfile(),
-                                ),
-                              );
-                            } else {
-                              // ถ้าผู้ใช้เข้าสู่ระบบ
-                              String episode_id = episodeIds[entry.key];
-                              setState(() {
-                                selectedEpisodeId = episode_id;
-                              });
+                        onTap: () async {
+                          if (_user == null && !isLocked) {
+                            // ถ้าผู้ใช้ไม่ได้เข้าสู่ระบบ และตอนไม่ได้ lock ให้ไปยังหน้า
+                            String episode_id = episodeIds[entry.key];
+                            setState(() {
+                              selectedEpisodeId = episode_id;
+                            });
+                            goToEpisodePage(episode_id);
+                          } else if (_user == null) {
+                            // ถ้าผู้ใช้ไม่ได้เข้าสู่ระบบ ให้ไปยังหน้า MyProfile
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => MyProfile(),
+                              ),
+                            );
+                          } else {
+                            // ถ้าผู้ใช้เข้าสู่ระบบ
+                            String episode_id = episodeIds[entry.key];
+                            setState(() {
+                              selectedEpisodeId = episode_id;
+                            });
 
-                              if (isLocked) {
-                                // ดึงข้อมูล coin จาก Firestore
-                                DocumentSnapshot userDoc =
-                                    await FirebaseFirestore.instance
-                                        .collection('users')
-                                        .doc(_user?.uid)
-                                        .get();
+                            // สร้าง bool check data coiiection users ที่ doc == uid ให้ค้นหา field purchasedEpisodes ซึ่งเก็บ เป็น array โดยใน array เก็บเป็น map ใน เก็บ 3 field
+                            if (true) {}
 
-                                // ตรวจสอบว่ามีเหรียญพอหรือไม่
-                                int coins = userDoc['coin'] ?? 0;
+                            if (isLocked) {
+                              // ดึงข้อมูล coin จาก Firestore
+                              DocumentSnapshot userDoc = await FirebaseFirestore
+                                  .instance
+                                  .collection('users')
+                                  .doc(_user?.uid)
+                                  .get();
 
-                                if (coins >= 15) {
-                                  // แสดงตัวเลือกการซื้อ
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) {
-                                      return AlertDialog(
-                                        title: Text('EP ที่ติด Icon Lock'),
-                                        content:
-                                            Text("ต้องการซื้อ EP นี้หรือไม่?"),
-                                        actions: <Widget>[
-                                          TextButton(
-                                            child: Text('ยกเลิก'),
-                                            onPressed: () {
-                                              Navigator.of(context).pop();
-                                            },
-                                          ),
-                                          TextButton(
-                                            child: Text('ซื้อ'),
-                                            onPressed: () async {
-                                              // ลบเหรียญ 15 จาก Firestore
-                                              await FirebaseFirestore.instance
-                                                  .collection('users')
-                                                  .doc(_user?.uid ??
-                                                      '') // ใช้ null-aware operator ที่นี่
-                                                  .update({
-                                                'coin':
-                                                    FieldValue.increment(-15),
-                                              });
+                              // ตรวจสอบว่ามีเหรียญพอหรือไม่
+                              int coins = userDoc['coin'] ?? 0;
 
-                                              // ทำการอัปเดตฟิลด์ purchasedEpisodes ใน Firestore
-                                              await updatePurchasedEpisodes(
-                                                  _user?.uid ?? '',
-                                                  widget.id,
-                                                  widget.title,
-                                                  episode_id);
+                              if (coins >= 15) {
+                                // แสดงตัวเลือกการซื้อ
+                                showDialog(
+                                  context: context,
+                                  builder: (context) {
+                                    return AlertDialog(
+                                      title: Text('EP ที่ติด Icon Lock'),
+                                      content:
+                                          Text("ต้องการซื้อ EP นี้หรือไม่?"),
+                                      actions: <Widget>[
+                                        TextButton(
+                                          child: Text('ยกเลิก'),
+                                          onPressed: () {
+                                            Navigator.of(context).pop();
+                                          },
+                                        ),
+                                        TextButton(
+                                          child: Text('ซื้อ'),
+                                          onPressed: () async {
+                                            // ลบเหรียญ 15 จาก Firestore
+                                            await FirebaseFirestore.instance
+                                                .collection('users')
+                                                .doc(_user?.uid ??
+                                                    '') // ใช้ null-aware operator ที่นี่
+                                                .update({
+                                              'coin': FieldValue.increment(-15),
+                                            });
 
-                                              // ทำการนำทางไปยังหน้า EpisodePage
-                                              Navigator.of(context).pop();
-                                              goToEpisodePage(episode_id);
-                                            },
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  );
-                                } else {
-                                  // แจ้งเตือนถ้าเงินไม่พอ
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) {
-                                      return AlertDialog(
-                                        title: Text('เงินไม่พอ'),
-                                        content: Text(
-                                            "คุณไม่มีเหรียญเพียงพอที่จะซื้อ EP นี้"),
-                                        actions: <Widget>[
-                                          TextButton(
-                                            child: Text('ตกลง'),
-                                            onPressed: () {
-                                              Navigator.of(context).pop();
-                                            },
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  );
-                                }
+                                            // ทำการอัปเดตฟิลด์ purchasedEpisodes ใน Firestore
+                                            await updatePurchasedEpisodes(
+                                              _user?.uid ?? '',
+                                              widget.id,
+                                              widget.title,
+                                              episode_id,
+                                            );
+
+                                            // ทำการนำทางไปยังหน้า EpisodePage
+                                            Navigator.of(context).pop();
+                                            goToEpisodePage(episode_id);
+                                          },
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
                               } else {
-                                // EP ไม่ติด Icon Lock ให้ไปยังหน้า EpisodePage โดยตรง
-                                goToEpisodePage(episode_id);
+                                // แจ้งเตือนถ้าเงินไม่พอ
+                                showDialog(
+                                  context: context,
+                                  builder: (context) {
+                                    return AlertDialog(
+                                      title: Text('เงินไม่พอ'),
+                                      content: Text(
+                                          "คุณไม่มีเหรียญเพียงพอที่จะซื้อ EP นี้"),
+                                      actions: <Widget>[
+                                        TextButton(
+                                          child: Text('ตกลง'),
+                                          onPressed: () {
+                                            Navigator.of(context).pop();
+                                          },
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
                               }
+                            } else {
+                              // EP ไม่ติด Icon Lock ให้ไปยังหน้า EpisodePage โดยตรง
+                              goToEpisodePage(episode_id);
                             }
-                          },
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              FutureBuilder<DocumentSnapshot>(
-                                future: FirebaseFirestore.instance
-                                    .collection(widget.id)
-                                    .doc(episodeIds[entry.key])
-                                    .get(),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    // แสดง CircularProgressIndicator ในระหว่างโหลดข้อมูล
-                                    return Padding(
-                                      padding: const EdgeInsets.all(8),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: SizedBox(
-                                          width: 70,
-                                          height: 70,
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(15.0),
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 8,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                      const Color.fromARGB(
-                                                          255, 255, 255, 255)),
-                                            ),
+                          }
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            FutureBuilder<DocumentSnapshot>(
+                              future: FirebaseFirestore.instance
+                                  .collection(widget.id)
+                                  .doc(episodeIds[entry.key])
+                                  .get(),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  // แสดง CircularProgressIndicator ในระหว่างโหลดข้อมูล
+                                  return Padding(
+                                    padding: const EdgeInsets.all(8),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: SizedBox(
+                                        width: 70,
+                                        height: 70,
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(15.0),
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 8,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                    const Color.fromARGB(
+                                                        255, 255, 255, 255)),
                                           ),
                                         ),
                                       ),
-                                    );
+                                    ),
+                                  );
+                                } else {
+                                  if (snapshot.hasError) {
+                                    // ถ้าเกิดข้อผิดพลาดในการโหลดข้อมูล
+                                    return Text('Error: ${snapshot.error}');
                                   } else {
-                                    if (snapshot.hasError) {
-                                      // ถ้าเกิดข้อผิดพลาดในการโหลดข้อมูล
-                                      return Text('Error: ${snapshot.error}');
-                                    } else {
-                                      // ถ้าโหลดข้อมูลสำเร็จ
-                                      List<dynamic> imagesDynamic =
-                                          snapshot.data?['images'] ?? [];
-                                      List<String> images = imagesDynamic
-                                          .map((e) => e.toString())
-                                          .cast<String>()
-                                          .toList();
-                                      String imageUrl = images.isNotEmpty
-                                          ? images[0]
-                                          : ''; // ดึง URL ภาพแรกจาก images
+                                    // ถ้าโหลดข้อมูลสำเร็จ
+                                    List<dynamic> imagesDynamic =
+                                        snapshot.data?['images'] ?? [];
+                                    List<String> images = imagesDynamic
+                                        .map((e) => e.toString())
+                                        .cast<String>()
+                                        .toList();
+                                    String imageUrl = images.isNotEmpty
+                                        ? images[0]
+                                        : ''; // ดึง URL ภาพแรกจาก images
 
-                                      if (imageUrl.isNotEmpty) {
-                                        // ถ้ามี URL ให้แสดงรูปภาพ
-                                        return Padding(
-                                          padding: const EdgeInsets.all(8.0),
-                                          child: ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            child: SizedBox(
-                                              width: 70,
-                                              height: 70,
-                                              child: Image.network(
-                                                imageUrl,
-                                                fit: BoxFit.cover,
-                                              ),
+                                    if (imageUrl.isNotEmpty) {
+                                      // ถ้ามี URL ให้แสดงรูปภาพ
+                                      return Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          child: SizedBox(
+                                            width: 70,
+                                            height: 70,
+                                            child: Image.network(
+                                              imageUrl,
+                                              fit: BoxFit.cover,
                                             ),
                                           ),
-                                        );
-                                      } else {
-                                        // ถ้าไม่มี URL ให้ใช้ Container ว่าง
-                                        return Padding(
-                                          padding: const EdgeInsets.all(8.0),
-                                          child: ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            child: SizedBox(
-                                              width: 70,
-                                              height: 70,
-                                              child: Container(),
-                                            ),
+                                        ),
+                                      );
+                                    } else {
+                                      // ถ้าไม่มี URL ให้ใช้ Container ว่าง
+                                      return Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          child: SizedBox(
+                                            width: 70,
+                                            height: 70,
+                                            child: Container(),
                                           ),
-                                        );
-                                      }
+                                        ),
+                                      );
                                     }
                                   }
-                                },
-                              ),
-                              Column(
-                                children: [
-                                  Text(
-                                    'Ep ${episodes[entry.key].split(' ')[1]}',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                }
+                              },
+                            ),
+                            Column(
+                              children: [
+                                Text(
+                                  'Ep ${episodes[entry.key].split(' ')[1]}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                  SizedBox(height: 10),
-                                  Row(
-                                    children: [
-                                      Icon(Icons.favorite, color: Colors.white),
-                                      //  แสดง data
-                                      StreamBuilder<int>(
-                                        stream: fetchRatingEP(
-                                            episodeIds[entry.key]),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.connectionState ==
-                                              ConnectionState.waiting) {
-                                            return CircularProgressIndicator();
-                                          } else if (snapshot.hasError) {
-                                            return Text(
-                                                'เกิดข้อผิดพลาด: ${snapshot.error}');
-                                          } else {
-                                            final rating = snapshot.data;
-                                            final displayRating =
-                                                (rating != null) ? rating : 0;
-                                            return Text('$displayRating');
-                                          }
-                                        },
-                                      )
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              Spacer(),
-                              if (isLocked)
-                                Text('15', style: TextStyle(fontSize: 16)),
-                              if (isLocked)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 10),
-                                  child: Icon(Icons.monetization_on_outlined,
-                                      color: Colors.black),
                                 ),
-                            ],
-                          ),),
+                                SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Icon(Icons.favorite, color: Colors.white),
+                                    //  แสดง data
+                                    StreamBuilder<int>(
+                                      stream:
+                                          fetchRatingEP(episodeIds[entry.key]),
+                                      builder: (context, snapshot) {
+                                        if (snapshot.connectionState ==
+                                            ConnectionState.waiting) {
+                                          return CircularProgressIndicator();
+                                        } else if (snapshot.hasError) {
+                                          return Text(
+                                              'เกิดข้อผิดพลาด: ${snapshot.error}');
+                                        } else {
+                                          final rating = snapshot.data;
+                                          final displayRating =
+                                              (rating != null) ? rating : 0;
+                                          return Text('$displayRating');
+                                        }
+                                      },
+                                    )
+                                  ],
+                                ),
+                              ],
+                            ),
+                            Spacer(),
+                            if (isLocked)
+                              Text('15', style: TextStyle(fontSize: 16)),
+                            if (isLocked)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 10),
+                                child: Icon(Icons.monetization_on_outlined,
+                                    color: Colors.black),
+                              ),
+                          ],
+                        ),
+                      ),
                     );
                   }).toList(),
                 ),

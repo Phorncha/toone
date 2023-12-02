@@ -1,5 +1,7 @@
 // import 'dart:ui';
 
+import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:apptoon/Pages/episode.dart';
@@ -43,6 +45,7 @@ class _DetailPageState extends State<DetailPage> {
     fetchEpisodes();
   }
 
+  // ตรวจสอบเรื่องราวที่ชื่นชอบ
   Stream<bool> checkFavoriteStory() {
     // สร้างและคืนค่า Stream จาก Firestore ที่ติดตาม user_favorite ของเอกสารนี้
     return FirebaseFirestore.instance
@@ -59,6 +62,7 @@ class _DetailPageState extends State<DetailPage> {
     });
   }
 
+  // อัปเดตข้อมูลใน Firestore เมื่อผู้ใช้ทำการเพิ่มหรือลดคะแนน
   Future<void> updateRatingStoryAndUser(bool isFavorite) async {
     try {
       final uid_user = _user?.uid;
@@ -142,6 +146,29 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
+  // ติดตามการเปลี่ยนแปลงของคะแนน
+  Stream<int> fetchRatingEP(String episodeId) {
+    final episodeRef =
+        FirebaseFirestore.instance.collection(widget.id).doc(episodeId);
+
+    return episodeRef.snapshots().map((document) {
+      if (document.exists) {
+        final rating = document.data()?['rating'];
+        if (rating != null && rating is int) {
+          return rating;
+        } else {
+          return 0; // กำหนดค่าเริ่มต้นหากคะแนนไม่ใช่ int หรือเป็น null
+        }
+      } else {
+        return 0; // กำหนดค่าเริ่มต้นหากไม่มีเอกสาร
+      }
+    }).handleError((error) {
+      print('ข้อผิดพลาดในการดึงคะแนนจาก Firestore: $error');
+      return 0; // กำหนดค่าเริ่มต้นในกรณีของข้อผิดพลาด
+    });
+  }
+
+// ดึงคะแนน (rating) ของเรื่องราว (story) จาก Firestore
   Future<int> getRatingStory() async {
     try {
       final storyRef =
@@ -150,7 +177,12 @@ class _DetailPageState extends State<DetailPage> {
       final document = await storyRef.get();
       if (document.exists) {
         final rating = document.data()?['rating'] as int;
-        return rating ?? 0;
+        if (rating != null && rating is int) {
+          return rating;
+        } else {
+          return 0; // ถ้าคะแนนไม่ใช่ int หรือเป็น null
+        }
+        // return rating ?? 0;
       }
       return 0; // ถ้าไม่มีเอกสารหรือไม่มีฟิล "rating"
     } catch (e) {
@@ -159,28 +191,7 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
-  Stream<int> fetchRatingEP(String episodeId) {
-    final episodeRef =
-        FirebaseFirestore.instance.collection(widget.id).doc(episodeId);
-
-    return episodeRef.snapshots().map((document) {
-      if (document.exists) {
-        final rating = document.data()?['rating'];
-        if (rating is int) {
-          return rating;
-        } else {
-          return 0; // ถ้า rating ไม่ใช่ int ให้คืนค่าเริ่มต้น 0
-        }
-      } else {
-        return 0; // ค่าคะแนนเริ่มต้นถ้าไม่พบข้อมูล
-      }
-    }).handleError((error) {
-      print('เกิดข้อผิดพลาดในการดึงคะแนนจาก Firestore: $error');
-      return 0; // จัดการข้อผิดพลาดโดยการให้ค่าเริ่มต้น 0
-    });
-  }
-
-  // ต้องแก้
+  // ตรวจสอบสถานะการเข้าสู่ระบบของผู้ใช้
   Future<void> checkUserLoginStatus(bool isLocked, String episodeId) async {
     // ตรวจสอบว่าผู้ใช้ล็อกอินอยู่หรือไม่
     bool isLoggedIn = _user != null;
@@ -200,6 +211,7 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
+  // นำทางไปยังหน้า EpisodePage โดยใช้ episodeId
   void goToEpisodePage(String episodeId) {
     // นำทางไปยังหน้า EpisodePage โดยใช้ episodeId
     Navigator.of(context).push(
@@ -213,6 +225,7 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
+  // ดึงข้อมูลของตอน (episodes) จาก Firestore โดยใช้ CollectionReference และ QuerySnapshot
   Future<void> fetchEpisodes() async {
     try {
       CollectionReference episodesCollection =
@@ -249,20 +262,48 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
-  Future<void> updatePurchasedEpisodes(
-      String uid, String toonId, String title, String episodeId) async {
+  // อัปเดตข้อมูลการซื้อของผู้ใช้ใน Firestore เมื่อมีการซื้อตอนใหม่
+  Future<void> updatePurchasedEpisodes(String userId, String storyId,
+      String storyTitle, String episodeId) async {
     try {
-      final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
+      // อ้างอิงไปยังเอกสารผู้ใช้ในคอลเล็กชัน "users"
+      final userRef =
+          FirebaseFirestore.instance.collection('users').doc(userId);
 
-      await userRef.update({
-        'purchasedEpisodes': FieldValue.arrayUnion([
-          {
-            'id': toonId,
-            'title': title,
-            'episodeId': episodeId,
+      // ดึงข้อมูลเอกสารผู้ใช้
+      final userDoc = await userRef.get();
+
+      // ตรวจสอบว่ามีเอกสารผู้ใช้หรือไม่
+      if (userDoc.exists) {
+        // ดึงข้อมูลตอนที่ซื้อมาจากเอกสารผู้ใช้
+        final purchasedEpisodes =
+            userDoc.data()?['purchasedEpisodes'] ?? <String, dynamic>{};
+
+        // ตรวจสอบว่า storyId มีอยู่ใน purchasedEpisodes หรือไม่
+        if (purchasedEpisodes.containsKey(storyId)) {
+          // ดึงตอนที่ซื้อมาสำหรับเรื่องที่ระบุ
+          final storyPurchases =
+              purchasedEpisodes[storyId]['episodes'] ?? <String, dynamic>{};
+
+          // ตรวจสอบว่า episodeId มีอยู่ในเรื่องหรือไม่
+          if (storyPurchases.containsKey(episodeId)) {
+            // ตอนถูกซื้อแล้ว, ไม่ต้องทำอะไร
+          } else {
+            // ตอนยังไม่ได้ซื้อ, เพิ่ม episodeId เข้าไปใน storyPurchases
+            storyPurchases[episodeId] = DateTime.now().toUtc().toString();
           }
-        ])
-      });
+        } else {
+          // เรื่องยังไม่ได้ซื้อ, เพิ่มเรื่องใน purchasedEpisodes
+          purchasedEpisodes[storyId] = {
+            'id': storyId, // เพิ่มฟิลด์ 'id' สำหรับเรื่อง
+            'title': storyTitle,
+            'episodes': {episodeId: DateTime.now().toUtc().toString()}
+          };
+        }
+
+        // อัปเดตเอกสารผู้ใช้ด้วยข้อมูล purchasedEpisodes ใหม่
+        await userRef.update({'purchasedEpisodes': purchasedEpisodes});
+      }
     } catch (e) {
       print('Error updating purchased episodes: $e');
     }
@@ -499,10 +540,11 @@ class _DetailPageState extends State<DetailPage> {
 
                                             // ทำการอัปเดตฟิลด์ purchasedEpisodes ใน Firestore
                                             await updatePurchasedEpisodes(
-                                                _user?.uid ?? '',
-                                                widget.id,
-                                                widget.title,
-                                                episode_id);
+                                              _user?.uid ?? '',
+                                              widget.id,
+                                              widget.title,
+                                              episode_id,
+                                            );
 
                                             // ทำการนำทางไปยังหน้า EpisodePage
                                             Navigator.of(context).pop();

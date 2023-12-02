@@ -1,3 +1,4 @@
+import 'package:apptoon/Pages/menuProfile/DetailCartoonPage.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,127 +11,151 @@ class MyCartoonsPage extends StatefulWidget {
 }
 
 class _MyCartoonsPageState extends State<MyCartoonsPage> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
   late User? _user;
-  List<Widget> episodeWidgets = []; // Add this line
+  late List<Map<String, dynamic>> _purchasedEpisodesData;
 
   @override
   void initState() {
     super.initState();
-    _getUser();
+    _user = FirebaseAuth.instance.currentUser;
+    _purchasedEpisodesData = [];
+
+    // Check if the user is logged in
+    if (_user != null) {
+      _fetchPurchasedEpisodes();
+    }
   }
 
-  Future<void> _getUser() async {
-    _user = _auth.currentUser;
-    setState(() {});
-  }
-
-  Future<void> _getPurchasedEpisodes() async {
+  // Fetch purchased episodes data from Firestore
+  void _fetchPurchasedEpisodes() async {
     try {
-      if (_user != null) {
-        // Get the user's data from Firestore
-        DocumentSnapshot<Map<String, dynamic>> userDoc =
-            await _firestore.collection('users').doc(_user!.uid).get();
+      DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_user!.uid)
+          .get();
 
-        if (userDoc.exists) {
-          // Check if the user is logged in
-          if (_user!.uid == userDoc.id) {
-            var purchasedEpisodes = userDoc['purchasedEpisodes'] ?? [];
+      if (userSnapshot.exists) {
+        Map<String, dynamic> userData =
+            userSnapshot.data() as Map<String, dynamic>;
+        Map<String, dynamic> purchasedEpisodes =
+            userData['purchasedEpisodes'] ?? {};
 
-            List<Widget> episodeWidgets = [];
+        print('Fetched purchased episodes data: $purchasedEpisodes');
 
-            for (var episode in purchasedEpisodes) {
-              var episodeId = episode['episodeId'];
+        List<Map<String, dynamic>> episodesData = [];
 
-              // Check if 'storys' contains information for the episode
-              if (userDoc['storys'] != null &&
-                  userDoc['storys'].containsKey(episodeId)) {
-                var storySnapshot = userDoc['storys'][episodeId];
-                var title = storySnapshot['title'];
-                var id = storySnapshot['id'];
+        // Loop through episodes in purchasedEpisodes
+        for (var entry in purchasedEpisodes.entries) {
+          String episodeId = entry.key;
 
-                // Create a Widget for the episode
-                Widget episodeWidget = Card(
-                  child: ListTile(
-                    title: Text(title),
-                    subtitle: Text('ID: $id'),
-                  ),
-                );
+          // Fetch data related to 'storys' collection using episodeId
+          DocumentSnapshot storySnapshot = await FirebaseFirestore.instance
+              .collection('storys')
+              .doc(episodeId)
+              .get();
 
-                // Add the Widget to the list
-                episodeWidgets.add(episodeWidget);
-              } else {
-                // Handle the case where the episode information is not found
-                print('Episode Not Found');
-              }
-            }
+          if (storySnapshot.exists) {
+            Map<String, dynamic> storyData =
+                storySnapshot.data() as Map<String, dynamic>;
+            String imageUrl = storyData['imageUrl'] ?? '';
+            String title = storyData['title'] ?? 'ไม่พบชื่อเรื่อง';
+            String docId = storyData['id'] ?? '';
 
-            // Update the UI with the episode Widgets
-            setState(() {
-              episodeWidgets.add(
-                ListTile(
-                  title: Text('Cartoon Title'),
-                  subtitle: Text('Cartoon Subtitle'),
-                ),
-              );
-
-              // Wrap the episode Widgets in a Column
-              episodeWidgets = [
-                ...episodeWidgets,
-                Card(
-                  child: ListTile(
-                    title: Text('Nested Cartoon 1'),
-                    subtitle: Text('Subtitle 1'),
-                  ),
-                ),
-                Card(
-                  child: ListTile(
-                    title: Text('Nested Cartoon 2'),
-                    subtitle: Text('Subtitle 2'),
-                  ),
-                ),
-              ];
+            episodesData.add({
+              'toonid': docId,
+              'title': title,
+              'image': imageUrl,
             });
           } else {
-            print('User not logged in');
+            print('Story with ID $episodeId does not exist.');
           }
-        } else {
-          print('User document does not exist');
         }
+
+        setState(() {
+          _purchasedEpisodesData = episodesData;
+        });
+        print('Updated purchased episodes data: $_purchasedEpisodesData');
       } else {
-        print('User not authenticated');
+        print('User snapshot does not exist.');
       }
     } catch (e) {
-      print('Error: $e');
+      print('Error fetching purchased episodes: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('My Cartoons'),
-      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: _user != null
-            ? Column(
-                children: [
-                  ElevatedButton(
-                    onPressed: () {
-                      _getPurchasedEpisodes();
-                    },
-                    child: Text('Get Purchased Episodes'),
-                  ),
-                  // Display the episode Widgets
-                  ...episodeWidgets,
-                ],
-              )
-            : Center(
-                child: Text('Please sign in to view your cartoons.'),
+        child: Card(
+          child: Column(
+            children: [
+              ListTile(
+                title: const Text('รายการ'),
+                subtitle: const Text('การ์ตูนของฉัน'),
               ),
+              if (_purchasedEpisodesData.isNotEmpty)
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _purchasedEpisodesData.length,
+                  itemBuilder: (context, index) {
+                    var episodeData = _purchasedEpisodesData[index];
+
+                    return GestureDetector(
+                      onTap: () {
+                        // Navigate to the DetailCartoonPage when tapped
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                DetailCartoonpage(episodeData: episodeData),
+                          ),
+                        );
+                      },
+                      child: Card(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.rectangle,
+                                color: Colors.grey,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: episodeData['image'] != null
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        episodeData['image'],
+                                        fit: BoxFit.cover,
+                                      ),
+                                    )
+                                  : Container(),
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: ListTile(
+                                title: Text(
+                                    episodeData['title'] ?? 'ไม่พบชื่อตอน'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              if (_purchasedEpisodesData.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('ไม่มีการ์ตูนที่ซื้อ'),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

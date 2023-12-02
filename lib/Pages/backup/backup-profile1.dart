@@ -20,22 +20,18 @@ class MyProfilePage extends StatefulWidget {
 
 class _MyProfilePageState extends State<MyProfilePage> {
   void signOut(BuildContext context) async {
-    try {
-      await FirebaseAuth.instance.signOut();
+    await FirebaseAuth.instance.signOut();
 
-      // ล้างข้อมูลการลงชื่อเข้าใช้
-      final prefs = await SharedPreferences.getInstance();
-      prefs.remove('email');
+    // ล้างข้อมูลการลงชื่อเข้าใช้
+    final prefs = await SharedPreferences.getInstance();
+    prefs.remove('email');
 
-      // เมื่อคลิกที่ไอคอน "ออกจากระบบ" ให้นำทางไปยังหน้า Login
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => HomePage(),
-        ),
-      );
-    } catch (e) {
-       print("Error during sign out: $e");
-    }
+    // เมื่อคลิกที่ไอคอน "ออกจากระบบ" ให้นำทางไปยังหน้า Login
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => HomePage(),
+      ),
+    );
   }
 
   @override
@@ -78,7 +74,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
         ),
         body: TabBarView(
           children: [
-            AddCoinsPage(email: widget.email ?? ""),
+            AddCoinsPage(email: widget.email),
             MyCartoonsPage(),
             AddFriendPage(),
           ],

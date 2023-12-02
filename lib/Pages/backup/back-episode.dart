@@ -98,28 +98,30 @@ class _EpisodePageState extends State<EpisodePage> {
   }
 
   Future<void> fetchComments() async {
-  try {
-    final episodeRef =
-        FirebaseFirestore.instance.collection(widget.toonId).doc(widget.episodeId);
+    try {
+      final episodeRef = FirebaseFirestore.instance
+          .collection(widget.toonId)
+          .doc(widget.episodeId);
 
-    final document = await episodeRef.get();
-    if (document.exists) {
-      final commentsData = document.data()?['list_comments'] as List?;
-      if (commentsData != null) {
-        setState(() {
-          comments = commentsData
-              .map((comment) => Comment(
-                    username: comment['uid'] ?? 'ไม่ระบุ',
-                    text: comment['comment'] ?? '',
-                  ))
-              .toList();
-        });
+      final document = await episodeRef.get();
+      if (document.exists) {
+        final commentsData = document.data()?['list_comments'] as List?;
+        if (commentsData != null) {
+          setState(() {
+            comments = commentsData
+                .map((comment) => Comment(
+                      username: comment['uid'] ?? 'ไม่ระบุ',
+                      text: comment['comment'] ?? '',
+                    ))
+                .toList();
+          });
+        }
       }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการดึงความคิดเห็นจาก Firestore: $e');
     }
-  } catch (e) {
-    print('เกิดข้อผิดพลาดในการดึงความคิดเห็นจาก Firestore: $e');
   }
-}
+
   // update RatingInfirebsto
   Future<void> updateRatingInFirestore(
       String toonId, String episodeId, bool isFavorite) async {
@@ -216,7 +218,8 @@ class _EpisodePageState extends State<EpisodePage> {
       print('เกิดข้อผิดพลาดในการอัปเดต rating และ comment ใน Firestore: $e');
     }
   }
-    // epsisode
+
+  // epsisode
   Future<void> epsisodeID_FilterNext() async {
     String episodeIdString = widget.episodeId.split(RegExp(r'[0-9]'))[0];
     int episodeIdNumber =
